@@ -17,10 +17,12 @@ import {
   runtimeFingerprint,
   runtimeSrcDir,
   stageRuntimeObjects,
+  supportedNativeCacheWarmProfiles,
   toolchainEnvironmentCachePolicy,
   toolchainEnvironmentFingerprint,
   vendorCacheBuildIdentity,
   vendorCacheTargetFlavor,
+  warmNativeCaches,
 } from "./cc.js";
 import { splitLlvmProgram } from "./llvm/split.js";
 
@@ -246,9 +248,11 @@ test("the toolchain environment joins cache identities", () => {
     completeArtifacts: false,
     runtimeObjects: false,
   });
+  // scriptc invokes its compiler and archiver directly; conventional build-
+  // system variables do not alter those commands.
   expect(toolchainEnvironmentCachePolicy({ CFLAGS: "-I/headers" })).toEqual({
-    completeArtifacts: false,
-    runtimeObjects: false,
+    completeArtifacts: true,
+    runtimeObjects: true,
   });
   expect(toolchainEnvironmentCachePolicy({ ZIG_LIB_DIR: "/zig/lib" })).toEqual({
     completeArtifacts: false,
@@ -259,14 +263,18 @@ test("the toolchain environment joins cache identities", () => {
     runtimeObjects: false,
   });
 
-  expect(vendorCacheBuildIdentity(base, "compiler-one")).not.toBe(
-    vendorCacheBuildIdentity(base, "compiler-two"),
+  expect(vendorCacheBuildIdentity(base, "compiler-one", "sources-one")).not.toBe(
+    vendorCacheBuildIdentity(base, "compiler-two", "sources-one"),
   );
-  expect(vendorCacheBuildIdentity(base, "compiler-one")).not.toBe(
+  expect(vendorCacheBuildIdentity(base, "compiler-one", "sources-one")).not.toBe(
     vendorCacheBuildIdentity(
       toolchainEnvironmentFingerprint({ MACOSX_DEPLOYMENT_TARGET: "11.0" }),
       "compiler-one",
+      "sources-one",
     ),
+  );
+  expect(vendorCacheBuildIdentity(base, "compiler-one", "sources-one")).not.toBe(
+    vendorCacheBuildIdentity(base, "compiler-one", "sources-two"),
   );
 });
 
@@ -1829,6 +1837,337 @@ test("the hard disable bypasses vendor prerequisite caches", async () => {
     else process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"] = oldVendorCacheDir;
   }
 });
+
+test.skipIf(process.platform === "win32")(
+  "shared vendor prerequisites re-key when vendored source bytes change",
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "scriptc-vendor-source-identity-"));
+    scratch.push(dir);
+    const cacheRoot = join(dir, "cache");
+    const fakeRuntimeRoot = join(dir, "runtime");
+    const fakeRuntime = join(fakeRuntimeRoot, "src");
+    const originalRuntime = runtimeSrcDir();
+    const cPath = join(dir, "program.c");
+    const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+    const oldNoCache = process.env["SCRIPTC_NO_CACHE"];
+    const oldRuntimeDir = process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"];
+    const oldVendorCacheDir = process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+
+    try {
+      await Promise.all([
+        cp(originalRuntime, fakeRuntime, { recursive: true }),
+        mkdir(join(fakeRuntimeRoot, "vendor"), { recursive: true }).then(() =>
+          Promise.all(["quickjs-ng", "ryu"].map((name) =>
+            cp(
+              join(originalRuntime, "..", "vendor", name),
+              join(fakeRuntimeRoot, "vendor", name),
+              { recursive: true },
+            )
+          ))
+        ),
+      ]);
+      process.env["SCRIPTC_CACHE_DIR"] = cacheRoot;
+      process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"] = fakeRuntime;
+      delete process.env["SCRIPTC_NO_CACHE"];
+      delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+      await writeFile(cPath, "int main(void) { return 0; }\n");
+
+      await compileC({
+        cPath,
+        outPath: join(dir, "first"),
+        cacheIdentity: TEST_CACHE_IDENTITY,
+        regex: true,
+      });
+      const vendorRoot = join(cacheRoot, "vendor");
+      expect((await readdir(vendorRoot)).filter((name) => name.includes("-lre-"))).toHaveLength(1);
+
+      const libregexp = join(fakeRuntimeRoot, "vendor", "quickjs-ng", "libregexp.c");
+      await writeFile(libregexp, `${await readFile(libregexp, "utf8")}\n/* cache identity probe */\n`);
+      await writeFile(cPath, "int main(void) { return 0; } /* second */\n");
+      await compileC({
+        cPath,
+        outPath: join(dir, "second"),
+        cacheIdentity: TEST_CACHE_IDENTITY,
+        regex: true,
+      });
+      expect((await readdir(vendorRoot)).filter((name) => name.includes("-lre-"))).toHaveLength(2);
+    } finally {
+      if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+      else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+      if (oldNoCache === undefined) delete process.env["SCRIPTC_NO_CACHE"];
+      else process.env["SCRIPTC_NO_CACHE"] = oldNoCache;
+      if (oldRuntimeDir === undefined) delete process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"];
+      else process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"] = oldRuntimeDir;
+      if (oldVendorCacheDir === undefined) delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+      else process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"] = oldVendorCacheDir;
+    }
+  },
+  120_000,
+);
+
+test.skipIf(process.platform === "win32")(
+  "uncached arbitrary C keeps vendor prerequisites outside a read-only runtime package",
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "scriptc-readonly-runtime-"));
+    scratch.push(dir);
+    const fakeRuntimeRoot = join(dir, "runtime");
+    const fakeRuntime = join(fakeRuntimeRoot, "src");
+    const fakeVendor = join(fakeRuntimeRoot, "vendor");
+    const originalRuntime = runtimeSrcDir();
+    const cPath = join(dir, "program.c");
+    const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+    const oldNoCache = process.env["SCRIPTC_NO_CACHE"];
+    const oldRuntimeDir = process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"];
+    const oldVendorCacheDir = process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+
+    try {
+      await Promise.all([
+        cp(originalRuntime, fakeRuntime, { recursive: true }),
+        mkdir(fakeVendor, { recursive: true }).then(() =>
+          Promise.all(["quickjs-ng", "ryu"].map((name) =>
+            cp(join(originalRuntime, "..", "vendor", name), join(fakeVendor, name), {
+              recursive: true,
+            })
+          ))
+        ),
+      ]);
+      process.env["SCRIPTC_CACHE_DIR"] = join(dir, "cache");
+      process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"] = fakeRuntime;
+      delete process.env["SCRIPTC_NO_CACHE"];
+      delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+      await writeFile(cPath, "int main(void) { return 0; }\n");
+      await chmod(fakeVendor, 0o555);
+
+      const outPath = join(dir, "program");
+      await compileC({ cPath, outPath, regex: true });
+      expect((await stat(outPath)).isFile()).toBe(true);
+      await expect(stat(join(fakeVendor, ".cache"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await chmod(fakeVendor, 0o755).catch(() => undefined);
+      if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+      else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+      if (oldNoCache === undefined) delete process.env["SCRIPTC_NO_CACHE"];
+      else process.env["SCRIPTC_NO_CACHE"] = oldNoCache;
+      if (oldRuntimeDir === undefined) delete process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"];
+      else process.env["SCRIPTC_TEST_RUNTIME_SRC_DIR"] = oldRuntimeDir;
+      if (oldVendorCacheDir === undefined) delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+      else process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"] = oldVendorCacheDir;
+    }
+  },
+  120_000,
+);
+
+test("native cache warming seeds exact runtime and vendor families without complete binaries", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scriptc-cache-warm-"));
+  scratch.push(dir);
+  const cacheRoot = join(dir, "cache");
+  const vendorCacheRoot = join(cacheRoot, "vendor");
+  const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+  const oldNoCache = process.env["SCRIPTC_NO_CACHE"];
+  const oldVendorCacheDir = process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+  try {
+    process.env["SCRIPTC_CACHE_DIR"] = cacheRoot;
+    delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+    delete process.env["SCRIPTC_NO_CACHE"];
+    const warmed = await warmNativeCaches({ profiles: ["runtime", "tls", "dynamic"] });
+    expect(warmed.cacheRoot).toBe(cacheRoot);
+    expect(warmed.profiles.map(({ profile }) => profile)).toEqual(["runtime", "tls", "dynamic"]);
+    expect(warmed.profiles.every(({ elapsedMs }) => elapsedMs >= 0)).toBe(true);
+    expect((await readdir(join(cacheRoot, "obj"), { withFileTypes: true })).filter((e) => e.isDirectory())).toHaveLength(3);
+    expect(await readdir(join(cacheRoot, "bin")).catch(() => [])).toEqual([]);
+    const vendorEntries = await readdir(vendorCacheRoot);
+    const tlsEntry = vendorEntries.find((name) => name.startsWith("mbedtls-"));
+    const engineEntry = vendorEntries.find((name) => /^3c8f3d689539-plain-/.test(name));
+    expect(tlsEntry).toBeDefined();
+    expect(engineEntry).toBeDefined();
+    expect((await stat(join(vendorCacheRoot, tlsEntry!, "libmbedtls.a.sha256"))).isFile()).toBe(true);
+    expect((await stat(join(vendorCacheRoot, engineEntry!, "libqjs.a.sha256"))).isFile()).toBe(true);
+  } finally {
+    if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+    else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+    if (oldNoCache === undefined) delete process.env["SCRIPTC_NO_CACHE"];
+    else process.env["SCRIPTC_NO_CACHE"] = oldNoCache;
+    if (oldVendorCacheDir === undefined) delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+    else process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"] = oldVendorCacheDir;
+  }
+}, 120_000);
+
+test("damaged shared vendor archives are rejected and rebuilt before linking", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scriptc-vendor-integrity-"));
+  scratch.push(dir);
+  const cacheRoot = join(dir, "cache");
+  const cPath = join(dir, "program.c");
+  const outPath = join(dir, "program");
+  const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+  const oldNoCache = process.env["SCRIPTC_NO_CACHE"];
+  const oldVendorCacheDir = process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+  const corruption = Buffer.from("scriptc-corrupt-vendor-archive\n");
+  try {
+    process.env["SCRIPTC_CACHE_DIR"] = cacheRoot;
+    delete process.env["SCRIPTC_NO_CACHE"];
+    delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+    await writeFile(cPath, "int main(void) { return 0; }\n");
+    await warmNativeCaches({ profiles: ["dynamic"] });
+
+    const vendorRoot = join(cacheRoot, "vendor");
+    const engineDir = (await readdir(vendorRoot)).find((name) =>
+      /^3c8f3d689539-plain-/.test(name)
+    );
+    expect(engineDir).toBeDefined();
+    const engineArchive = join(vendorRoot, engineDir!, "libqjs.a");
+    expect((await stat(`${engineArchive}.sha256`)).isFile()).toBe(true);
+    await writeFile(engineArchive, corruption);
+
+    await compileC({
+      cPath,
+      outPath,
+      cacheIdentity: TEST_CACHE_IDENTITY,
+      dynamic: true,
+    });
+
+    expect((await stat(outPath)).isFile()).toBe(true);
+    const repaired = await readFile(engineArchive);
+    expect(repaired).not.toEqual(corruption);
+    expect((await readFile(`${engineArchive}.sha256`, "utf8")).trim()).toBe(
+      createHash("sha256").update(repaired).digest("hex"),
+    );
+  } finally {
+    if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+    else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+    if (oldNoCache === undefined) delete process.env["SCRIPTC_NO_CACHE"];
+    else process.env["SCRIPTC_NO_CACHE"] = oldNoCache;
+    if (oldVendorCacheDir === undefined) delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+    else process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"] = oldVendorCacheDir;
+  }
+}, 120_000);
+
+test("dynamic builds promote staged vendor archives before bounded LRU eviction", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scriptc-vendor-lru-"));
+  scratch.push(dir);
+  const cacheRoot = join(dir, "cache");
+  const cPath = join(dir, "program.c");
+  const outPath = join(dir, "program");
+  const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+  const oldNoCache = process.env["SCRIPTC_NO_CACHE"];
+  const oldMax = process.env["SCRIPTC_CACHE_MAX_MB"];
+  const oldVendorCacheDir = process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+  try {
+    process.env["SCRIPTC_CACHE_DIR"] = cacheRoot;
+    delete process.env["SCRIPTC_NO_CACHE"];
+    delete process.env["SCRIPTC_CACHE_MAX_MB"];
+    delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+    await writeFile(cPath, "int main(void) { return 0; }\n");
+    await warmNativeCaches({ profiles: ["dynamic"] });
+
+    const vendorRoot = join(cacheRoot, "vendor");
+    const engineDir = (await readdir(vendorRoot)).find((name) =>
+      /^3c8f3d689539-plain-/.test(name)
+    );
+    expect(engineDir).toBeDefined();
+    const engineArchive = join(vendorRoot, engineDir!, "libqjs.a");
+    const initialBytes = await cacheTreeBytes(cacheRoot);
+    const capMb = Math.max(4, Math.ceil(initialBytes * 2 / (1024 * 1024)));
+    const filler = join(cacheRoot, "filler.bin");
+    const staleArchiveTime = new Date("2000-01-01T00:00:00.000Z");
+    const fillerTime = new Date("2001-01-01T00:00:00.000Z");
+    await writeFile(filler, Buffer.alloc(capMb * 1024 * 1024));
+    await utimes(engineArchive, staleArchiveTime, staleArchiveTime);
+    await utimes(filler, fillerTime, fillerTime);
+    process.env["SCRIPTC_CACHE_MAX_MB"] = String(capMb);
+
+    await compileC({
+      cPath,
+      outPath,
+      cacheIdentity: TEST_CACHE_IDENTITY,
+      dynamic: true,
+    });
+
+    expect((await stat(outPath)).isFile()).toBe(true);
+    expect((await stat(engineArchive)).mtimeMs).toBeGreaterThan(fillerTime.getTime());
+    expect(await cacheTreeBytes(cacheRoot)).toBeLessThanOrEqual(capMb * 1024 * 1024);
+  } finally {
+    if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+    else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+    if (oldNoCache === undefined) delete process.env["SCRIPTC_NO_CACHE"];
+    else process.env["SCRIPTC_NO_CACHE"] = oldNoCache;
+    if (oldMax === undefined) delete process.env["SCRIPTC_CACHE_MAX_MB"];
+    else process.env["SCRIPTC_CACHE_MAX_MB"] = oldMax;
+    if (oldVendorCacheDir === undefined) delete process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"];
+    else process.env["SCRIPTC_TEST_VENDOR_CACHE_DIR"] = oldVendorCacheDir;
+  }
+}, 120_000);
+
+test("native cache warming follows the hard cache disable", async () => {
+  const oldNoCache = process.env["SCRIPTC_NO_CACHE"];
+  try {
+    process.env["SCRIPTC_NO_CACHE"] = "1";
+    await expect(warmNativeCaches({ profiles: ["runtime"] })).rejects.toThrow(
+      "native build cache is disabled",
+    );
+  } finally {
+    if (oldNoCache === undefined) delete process.env["SCRIPTC_NO_CACHE"];
+    else process.env["SCRIPTC_NO_CACHE"] = oldNoCache;
+  }
+});
+
+test("native cache warming refuses environments that disable persistent objects", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scriptc-cache-warm-disabled-"));
+  scratch.push(dir);
+  const cacheRoot = join(dir, "cache");
+  const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+  const oldCpath = process.env["CPATH"];
+  try {
+    process.env["SCRIPTC_CACHE_DIR"] = cacheRoot;
+    process.env["CPATH"] = dir;
+    await expect(warmNativeCaches({ profiles: ["runtime"] })).rejects.toThrow(
+      "requires a persistently cacheable compiler environment",
+    );
+    expect(await readdir(cacheRoot)).toEqual([]);
+  } finally {
+    if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+    else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+    if (oldCpath === undefined) delete process.env["CPATH"];
+    else process.env["CPATH"] = oldCpath;
+  }
+});
+
+test("native cache warm profiles follow target capabilities", () => {
+  expect(supportedNativeCacheWarmProfiles({
+    argv: ["zig", "cc"],
+    target: "wasm32-wasi",
+    zigTarget: "wasm32-wasi",
+    targetArgs: [],
+    linkArgs: [],
+  })).toEqual([]);
+  expect(supportedNativeCacheWarmProfiles({
+    argv: ["zig", "cc"],
+    target: "aarch64-apple-ios",
+    zigTarget: "aarch64-ios.15.0",
+    targetArgs: [],
+    linkArgs: [],
+  })).toEqual([]);
+});
+
+test("parallel native cache warming fails cleanly when the bounded cache cannot retain its profiles", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "scriptc-cache-warm-cap-"));
+  scratch.push(dir);
+  const cacheRoot = join(dir, "cache");
+  const oldCacheDir = process.env["SCRIPTC_CACHE_DIR"];
+  const oldMax = process.env["SCRIPTC_CACHE_MAX_MB"];
+  try {
+    process.env["SCRIPTC_CACHE_DIR"] = cacheRoot;
+    process.env["SCRIPTC_CACHE_MAX_MB"] = "2.5";
+    await expect(warmNativeCaches()).rejects.toThrow(
+      "SCRIPTC_CACHE_MAX_MB is too small to retain the requested native cache warm profiles",
+    );
+    expect(await readdir(cacheRoot)).not.toEqual([]);
+  } finally {
+    if (oldCacheDir === undefined) delete process.env["SCRIPTC_CACHE_DIR"];
+    else process.env["SCRIPTC_CACHE_DIR"] = oldCacheDir;
+    if (oldMax === undefined) delete process.env["SCRIPTC_CACHE_MAX_MB"];
+    else process.env["SCRIPTC_CACHE_MAX_MB"] = oldMax;
+  }
+}, 120_000);
 
 test.skipIf(process.platform !== "darwin")(
   "vendor object caches separate deployment-target environments",
