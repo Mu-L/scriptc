@@ -5,15 +5,18 @@
 
 import { spawn } from "node:child_process";
 
-// Node's default stdio is "pipe" (streams — no lowering): omitting the
-// options never silently loses the child's output.
+// The default and explicit "pipe" forms use piped streams.
+// Keep both adjacent to the remaining rejection cases.
 const noOpts = spawn("/bin/echo");
 
-// "pipe" and "inherit" typecheck against the declared union but have no
-// lowering — each names its gap.
+// "inherit" and "ignore" remain process-only forms without child streams.
+// All four supported modes must coexist with the fences below.
 const piped = spawn("/bin/echo", [], { stdio: "pipe" });
 const inherited = spawn("/bin/echo", [], { stdio: "inherit" });
 
+// A variable options value must fence instead of being dropped.
+const options: { stdio: "ignore"; detached: boolean } = { stdio: "ignore", detached: true };
+spawn("true", [], options);
 const c = spawn("true", [], { stdio: "ignore" });
 
 // `() => 5` IS assignable to a void-returning listener slot and now ADOPTS
@@ -21,6 +24,6 @@ const c = spawn("true", [], { stdio: "ignore" });
 // listener keeps its word and stays fenced — the registry calls listeners
 // as void.
 c.on("exit", (): number => 5);
-
 // Methods have no bound-value form — call on directly.
 const f = c.on;
+// Keep each fence on its own statement so diagnostics remain site-specific.
