@@ -728,6 +728,10 @@ function lowerExprInner(lowerer: Lowerer, expr: ts.Expression): IrExpr {
           );
         }
         if (projection?.kind === "builtin-function") {
+          if (!isJsSourceFile(expr.getSourceFile())) {
+            const callable = lowerer.lowerBuiltinCallableValue(projection, loc);
+            if (callable) return callable;
+          }
           lowerer.unsupported(
             "SC1090",
             expr,
@@ -949,6 +953,10 @@ function lowerExprInner(lowerer: Lowerer, expr: ts.Expression): IrExpr {
           // harness adds worker_threads.Worker to its identity Set).
           if (isJsSourceFile(expr.getSourceFile())) {
             return { kind: "strLit", value: `[builtin ${bi.module}.${bi.member}]`, type: STRING, loc };
+          }
+          {
+            const callable = lowerer.lowerBuiltinCallableValue(bi, loc);
+            if (callable) return callable;
           }
           if (builtinModuleFnOf(lowerer, bi.module, bi.member)) {
             lowerer.unsupported(
