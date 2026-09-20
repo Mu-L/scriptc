@@ -582,6 +582,14 @@ export type BuiltinValueParam =
   | { mode: "optional"; type: IrType; defaultValue: string }
   | { mode: "rest"; type: IrType };
 
+/** The common first-class shape for builtin functions whose supported
+ * source signature is already exactly the fixed native ABI. Keeping the
+ * opt-in on each table row is deliberate: dispatch sentinels and functions
+ * with call-site validation must provide a real adapter instead. */
+function exactValueParams(...types: IrType[]): BuiltinValueParam[] {
+  return types.map((type) => ({ mode: "required", type }));
+}
+
 /** The lowerable surface of the supported node builtin modules, keyed by
  * CANONICAL module name (both "fs" and "node:fs" land on "fs" — see
  * canonicalBuiltinModule). Like STR_METHODS, membership is only half the
@@ -624,9 +632,13 @@ const PATH_WIN32_MODULE_FNS: Record<string, BuiltinModuleFn | undefined> = {
 export const BUILTIN_MODULE_FNS: Record<string, Record<string, BuiltinModuleFn | undefined> | undefined> = {
   fs: {
     readFileSync: { fn: "fs.readFileSync", params: [STRING, STRING], result: STRING },
+    // The exact-API subset is first-class. A fixed native ABI is not enough:
+    // rows whose Node function has behavior-bearing trailing options remain
+    // call-only, or function-width adaptation could silently discard those
+    // options before entering the fixed runtime call.
     writeFileSync: { fn: "fs.writeFileSync", params: [STRING, STRING], result: VOID },
     appendFileSync: { fn: "fs.appendFileSync", params: [STRING, STRING], result: VOID },
-    existsSync: { fn: "fs.existsSync", params: [STRING], result: BOOL },
+    existsSync: { fn: "fs.existsSync", params: [STRING], result: BOOL, valueParams: exactValueParams(STRING) },
     mkdirSync: { fn: "fs.mkdirSync", params: [STRING], result: VOID },
     rmSync: { fn: "fs.rmSync", params: [STRING], result: VOID },
     rmdirSync: { fn: "fs.rmdirSync", params: [STRING], result: VOID },
@@ -636,9 +648,9 @@ export const BUILTIN_MODULE_FNS: Record<string, Record<string, BuiltinModuleFn |
     // accessSync's omitted mode completes to 0 (F_OK) in the special case
     // in lowerBuiltinModuleCall — string `defaults` can't spell a number.
     accessSync: { fn: "fs.accessSync", params: [STRING, F64], result: VOID },
-    unlinkSync: { fn: "fs.unlinkSync", params: [STRING], result: VOID },
-    chmodSync: { fn: "fs.chmodSync", params: [STRING, F64], result: VOID },
-    chownSync: { fn: "fs.chownSync", params: [STRING, F64, F64], result: VOID },
+    unlinkSync: { fn: "fs.unlinkSync", params: [STRING], result: VOID, valueParams: exactValueParams(STRING) },
+    chmodSync: { fn: "fs.chmodSync", params: [STRING, F64], result: VOID, valueParams: exactValueParams(STRING, F64) },
+    chownSync: { fn: "fs.chownSync", params: [STRING, F64, F64], result: VOID, valueParams: exactValueParams(STRING, F64, F64) },
     // The 2-argument form only: Node's mode flags (COPYFILE_EXCL, ...)
     // land on the arity fence.
     copyFileSync: { fn: "fs.copyFileSync", params: [STRING, STRING], result: VOID },
@@ -647,7 +659,7 @@ export const BUILTIN_MODULE_FNS: Record<string, Record<string, BuiltinModuleFn |
     // adapter. The row still projects the static surface and routes the
     // dispatch.
     rename: { fn: "fs.renameCb", params: [], result: VOID },
-    renameSync: { fn: "fs.renameSync", params: [STRING, STRING], result: VOID },
+    renameSync: { fn: "fs.renameSync", params: [STRING, STRING], result: VOID, valueParams: exactValueParams(STRING, STRING) },
     // statSync's no-follow sibling; stats.isSymbolicLink answers what the
     // follow-free snapshot saw.
     lstatSync: { fn: "fs.lstatSync", params: [STRING], result: STATS_T },
@@ -669,7 +681,7 @@ export const BUILTIN_MODULE_FNS: Record<string, Record<string, BuiltinModuleFn |
     // overloads lower to separate fixed-width runtime ABIs. As with
     // readSync, -1 is the current-offset sentinel.
     writeSync: { fn: "fs.writeSync", params: [F64, BYTES_U8, F64, F64, F64], result: F64 },
-    closeSync: { fn: "fs.closeSync", params: [F64], result: VOID },
+    closeSync: { fn: "fs.closeSync", params: [F64], result: VOID, valueParams: exactValueParams(F64) },
     // Entirely special-cased (lowerFsWatchCall — the callback needs an
     // adapter per listener shape); this entry only routes the dispatch.
     watch: { fn: "fs.watch", params: [], result: VOID },
@@ -684,9 +696,9 @@ export const BUILTIN_MODULE_FNS: Record<string, Record<string, BuiltinModuleFn |
     readdir: { fn: "fsp.readdir", params: [STRING], result: { kind: "promise", inner: arrayOf(STRING) } },
     rm: { fn: "fsp.rm", params: [STRING], result: { kind: "promise", inner: VOID } },
     stat: { fn: "fsp.stat", params: [STRING], result: { kind: "promise", inner: STATS_T } },
-    unlink: { fn: "fsp.unlink", params: [STRING], result: { kind: "promise", inner: VOID } },
-    chmod: { fn: "fsp.chmod", params: [STRING, F64], result: { kind: "promise", inner: VOID } },
-    rename: { fn: "fsp.rename", params: [STRING, STRING], result: { kind: "promise", inner: VOID } },
+    unlink: { fn: "fsp.unlink", params: [STRING], result: { kind: "promise", inner: VOID }, valueParams: exactValueParams(STRING) },
+    chmod: { fn: "fsp.chmod", params: [STRING, F64], result: { kind: "promise", inner: VOID }, valueParams: exactValueParams(STRING, F64) },
+    rename: { fn: "fsp.rename", params: [STRING, STRING], result: { kind: "promise", inner: VOID }, valueParams: exactValueParams(STRING, STRING) },
     // open's optional flags/mode completion is special-cased in
     // lowerBuiltinModuleCall; this row routes all import spellings and
     // gives coverage the static member.
