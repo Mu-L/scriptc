@@ -1017,6 +1017,13 @@ export const AMBIENT_SURFACE_FNS: readonly AmbientSurfaceRow[] = [
     note: "the live clock",
   },
   {
+    id: "stdlib.date.parse",
+    kind: "stdlib",
+    name: "Date.parse",
+    fns: ["date.parse"],
+    note: "one date string, using the bounded parser shared with new Date(dateString).getTime()",
+  },
+  {
     id: "stdlib.date.constructor",
     kind: "stdlib",
     name: "Date constructor",
@@ -1155,6 +1162,13 @@ export const AMBIENT_SURFACE_FNS: readonly AmbientSurfaceRow[] = [
     name: "process.exit",
     fns: ["process.exit", "process.exiting"],
     note: "process.exit and the process._exiting flag read are one surface",
+  },
+  {
+    id: "node-builtin.process.exitCode",
+    kind: "node-builtin",
+    name: "process.exitCode",
+    fns: ["process.setExitCode"],
+    note: "numeric writes in statement position set the implicit exit status; process.exit() reads it",
   },
   // ── the tls CA store (lowerTlsCaCall / lowerTlsRootCertificates): the
   // host's trust anchors, read and replaced. Dedicated paths, and

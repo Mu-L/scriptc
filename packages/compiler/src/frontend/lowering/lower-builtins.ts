@@ -7186,10 +7186,8 @@ function lowerOptionalStringSearchParams(lowerer: Lowerer, init: IrExpr, loc: Sr
 
 /** `process.exit(code)` / `process.cwd()` → libCall. The fallback
    * declaration makes exit's code required; @types/node declares it
-   * optional, and a bare `process.exit()` lowers as exit(0) — exactly
-   * Node's behavior when process.exitCode was never set (setting exitCode
-   * is fenced like every other unsupported process member, so "never set"
-   * always holds in a compiled program). */
+   * optional. A bare `process.exit()` uses the current exitCode, or zero
+   * when unset. */
   export function lowerProcessMethodCall(lowerer: Lowerer, call: ts.CallExpression,
     access: ts.PropertyAccessExpression,): IrExpr | null {
     if (call.questionDotToken) return null;
@@ -7906,7 +7904,7 @@ function lowerOptionalStringSearchParams(lowerer: Lowerer, init: IrExpr, loc: Sr
       const code: IrExpr =
         arg !== undefined
           ? lowerer.lowerExprExpecting(arg, F64)
-          : { kind: "numLit", value: 0, type: F64, loc };
+          : { kind: "libCall", fn: "process.currentExitCode", args: [], type: F64, loc };
       return { kind: "libCall", fn: "process.exit", args: [code], type: VOID, loc };
     }
     return null; // process.argv(...) etc. are tsc errors before lowering
@@ -8030,6 +8028,16 @@ const DATE_METHOD_HINT =
         lowerer.noLowering(`Date.now with ${call.arguments.length} arguments`, call);
       }
       return { kind: "libCall", fn: "date.now", args: [], type: F64, loc };
+    }
+    // Date.parse uses the same bounded date-string parser as
+    // new Date(dateString).getTime(); keep their NaN and TimeClip behavior
+    // identical for the ISO timestamps used by CLI applications.
+    if (lowerer.stdlibGlobalMember(access, "Date") === "parse") {
+      if (call.arguments.length !== 1 || ts.isSpreadElement(call.arguments[0]!)) {
+        lowerer.noLowering(`Date.parse with ${call.arguments.length} arguments`, call);
+      }
+      const input = lowerer.lowerExprExpecting(call.arguments[0]!, STRING);
+      return { kind: "libCall", fn: "date.parse", args: [input], type: F64, loc };
     }
     // Date.UTC(year[, month[, date[, hours[, minutes[, seconds[, ms]]]]]]):
     // a pure function of its numbers — the runtime's MakeDay/MakeTime/
