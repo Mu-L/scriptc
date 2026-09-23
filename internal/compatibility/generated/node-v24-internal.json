@@ -507,9 +507,9 @@
       "apiEntries": 276,
       "static": {
         "supported": 0,
-        "partial": 44,
+        "partial": 48,
         "refused": 0,
-        "not-implemented": 232,
+        "not-implemented": 228,
         "by-design": 0,
         "unreviewed": 0,
         "not-applicable": 0
@@ -50575,7 +50575,8 @@
           "tests/corpus/2920-fs-promises-function-values.ts",
           "tests/corpus/2940-fsp-realpath.ts",
           "tests/corpus/2941-fsp-lstat-identity.ts",
-          "tests/corpus/2942-fsp-readdir-dirent.ts"
+          "tests/corpus/2942-fsp-readdir-dirent.ts",
+          "tests/corpus/2950-fs-descriptor-publication.ts"
         ]
       },
       "dynamic": {
@@ -54535,8 +54536,11 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:fs"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.fs.fchmodSync",
+        "tests": [
+          "tests/corpus/2950-fs-descriptor-publication.ts"
+        ]
       },
       "dynamic": {
         "status": "not-implemented",
@@ -54616,8 +54620,11 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:fs"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.fs.fstatSync",
+        "tests": [
+          "tests/corpus/2950-fs-descriptor-publication.ts"
+        ]
       },
       "dynamic": {
         "status": "not-implemented",
@@ -54643,8 +54650,11 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:fs"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.fs.fsyncSync",
+        "tests": [
+          "tests/corpus/2950-fs-descriptor-publication.ts"
+        ]
       },
       "dynamic": {
         "status": "not-implemented",
@@ -54832,8 +54842,11 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:fs"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.fs.linkSync",
+        "tests": [
+          "tests/corpus/2950-fs-descriptor-publication.ts"
+        ]
       },
       "dynamic": {
         "status": "not-implemented",

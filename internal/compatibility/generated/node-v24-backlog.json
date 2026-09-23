@@ -8,8 +8,8 @@
     "tiers": {
       "static": {
         "replace-refusal": 46,
-        "verify-gap": 2703,
-        "audit-partial": 463,
+        "verify-gap": 2699,
+        "audit-partial": 467,
         "classify": 2,
         "implement": 81
       },
@@ -38114,12 +38114,14 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:fs",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "surface-manifest:node-builtin.fs.fchmodSync",
+          "tests": [
+            "tests/corpus/2950-fs-descriptor-publication.ts"
+          ]
         },
         "dynamic": {
           "status": "not-implemented",
@@ -38213,12 +38215,14 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:fs",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "surface-manifest:node-builtin.fs.fstatSync",
+          "tests": [
+            "tests/corpus/2950-fs-descriptor-publication.ts"
+          ]
         },
         "dynamic": {
           "status": "not-implemented",
@@ -38246,12 +38250,14 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:fs",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "surface-manifest:node-builtin.fs.fsyncSync",
+          "tests": [
+            "tests/corpus/2950-fs-descriptor-publication.ts"
+          ]
         },
         "dynamic": {
           "status": "not-implemented",
@@ -38477,12 +38483,14 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:fs",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "surface-manifest:node-builtin.fs.linkSync",
+          "tests": [
+            "tests/corpus/2950-fs-descriptor-publication.ts"
+          ]
         },
         "dynamic": {
           "status": "not-implemented",
