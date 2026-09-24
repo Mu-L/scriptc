@@ -6618,6 +6618,12 @@
    ],
    "diags": []
   },
+  "<repo>/tests/corpus/2957-http-static-response-controls.ts": {
+   "order": [
+    "<repo>/tests/corpus/2957-http-static-response-controls.ts"
+   ],
+   "diags": []
+  },
   "<repo>/tests/corpus/2961-emitter-computed-names.cjs": {
    "order": [
     "<repo>/tests/corpus/2961-emitter-computed-names.cjs"
