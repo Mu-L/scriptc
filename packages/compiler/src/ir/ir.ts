@@ -2582,6 +2582,7 @@ export type IrLibFn =
   | "net.listenOptsReusePort"
   | "net.listenOptsReusePortCb"
   | "net.serverPort"
+  | "net.serverListening"
   /** server.address() as the full AddressInfo record (the dgram.address
    * materialization pattern: the emitter builds the record from the three
    * runtime reads; the frontend pinned the shape). Never throws — before
@@ -2740,6 +2741,8 @@ export type IrLibFn =
    * on("request") route; option helpers set parser behavior on a fresh
    * server before the constructor/factory result is returned. */
   | "http.createServerEmpty"
+  | "http.validateHeaderName"
+  | "http.validateHeaderValue"
   | "http.serverJoinDupHeaders"
   | "http.serverAllowMissingHostHeader"
   /** The five writable numeric http.Server timeout fields use one
@@ -2765,6 +2768,9 @@ export type IrLibFn =
   | "http.resStatusMsgGet"
   | "http.resStatusMsgSet"
   | "http.resGetHeader"
+  | "http.resGetHeaderNames"
+  | "http.resGetRawHeaderNames"
+  | "http.resGetHeaders"
   | "http.resHasHeader"
   | "http.resRemoveHeader"
   | "http.resOnFinish"
@@ -2779,6 +2785,11 @@ export type IrLibFn =
   | "http.resSetHeader"
   | "http.resWriteHead"
   | "http.resWriteHeadN"
+  /** HTTP/1.1 informational heads; early hints takes flat string pairs,
+   * with a lowercase `link` key required to send anything. */
+  | "http.resWriteContinue"
+  | "http.resWriteProcessing"
+  | "http.resWriteEarlyHints"
   | "http.resWrite"
   | "http.resWriteBytes"
   | "http.resEnd"
@@ -2788,6 +2799,7 @@ export type IrLibFn =
   | "http.resWriteDyn"
   | "http.resEndDyn"
   | "http.resHeadersSent"
+  | "http.resWritableEnded"
   | "http.resFlushHeaders"
   | "http.resAddTrailers"
   | "http.resCork"
@@ -3166,6 +3178,13 @@ export type IrLibFn =
    * idiom reads it through a cast). */
   | "net.sockEncrypted"
   | "http.clientWrite"
+  | "http.clientSetHeader"
+  | "http.clientGetHeader"
+  | "http.clientHasHeader"
+  | "http.clientRemoveHeader"
+  | "http.clientGetHeaderNames"
+  | "http.clientGetRawHeaderNames"
+  | "http.clientGetHeaders"
   | "http.clientWriteBytes"
   | "http.clientEnd"
   | "http.clientEndStr"
@@ -3178,6 +3197,12 @@ export type IrLibFn =
   | "http.clientCork"
   | "http.clientUncork"
   | "http.clientWritableCorked"
+  | "http.clientMethod"
+  | "http.clientPath"
+  | "http.clientHost"
+  | "http.clientProtocol"
+  | "http.clientHeadersSent"
+  | "http.clientWritableEnded"
   /** request/get with a URL-STRING first argument: the runtime parses it
    * (WHATWG) and dials — throws catchably on an unparsable input or a
    * non-http scheme. */
@@ -7358,6 +7383,11 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "dc.chanBindStore",
   "dc.chanRunStores",
   "http.resWriteHeadDyn",
+  "http.resWriteContinue",
+  "http.resWriteProcessing",
+  "http.resWriteEarlyHints",
+  "http.validateHeaderName",
+  "http.validateHeaderValue",
   "http.serverTimeoutGet",
   "http.serverTimeoutOptionSet",
   "net.sockSetEncoding",
