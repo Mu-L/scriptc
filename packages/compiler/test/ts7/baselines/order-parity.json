@@ -6913,6 +6913,12 @@
    ],
    "diags": []
   },
+  "<repo>/tests/corpus/3024-string-number-narrow-for-in.ts": {
+   "order": [
+    "<repo>/tests/corpus/3024-string-number-narrow-for-in.ts"
+   ],
+   "diags": []
+  },
   "<repo>/tests/corpus/303-break-continue.ts": {
    "order": [
     "<repo>/tests/corpus/303-break-continue.ts"
