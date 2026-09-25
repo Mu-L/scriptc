@@ -6973,6 +6973,18 @@
    ],
    "diags": []
   },
+  "<repo>/tests/corpus/3033-string-search-needle-coercion.js": {
+   "order": [
+    "<repo>/tests/corpus/3033-string-search-needle-coercion.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3034-arguments-with-parameters.js": {
+   "order": [
+    "<repo>/tests/corpus/3034-arguments-with-parameters.js"
+   ],
+   "diags": []
+  },
   "<repo>/tests/corpus/304-compound-incdec.ts": {
    "order": [
     "<repo>/tests/corpus/304-compound-incdec.ts"
