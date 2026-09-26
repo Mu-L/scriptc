@@ -7057,6 +7057,24 @@
    ],
    "diags": []
   },
+  "<repo>/tests/corpus/3044-array-slice-splice-positions.js": {
+   "order": [
+    "<repo>/tests/corpus/3044-array-slice-splice-positions.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3045-array-indexed-mutation.js": {
+   "order": [
+    "<repo>/tests/corpus/3045-array-indexed-mutation.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3046-array-indexed-ref-identity.ts": {
+   "order": [
+    "<repo>/tests/corpus/3046-array-indexed-ref-identity.ts"
+   ],
+   "diags": []
+  },
   "<repo>/tests/corpus/305-truthiness.ts": {
    "order": [
     "<repo>/tests/corpus/305-truthiness.ts"
