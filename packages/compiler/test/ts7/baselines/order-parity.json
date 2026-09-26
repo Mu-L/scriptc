@@ -9475,6 +9475,12 @@
    ],
    "diags": []
   },
+  "<repo>/tests/fixtures/npm/cases/dotfolder/main.ts": {
+   "order": [
+    "<repo>/tests/fixtures/npm/cases/dotfolder/main.ts"
+   ],
+   "diags": []
+  },
   "<repo>/tests/fixtures/npm/cases/dual-entry/main.ts": {
    "order": [
     "<repo>/tests/fixtures/npm/cases/dual-entry/main.ts"
