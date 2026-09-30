@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { compileC, deserializeModule, emitCModule, validateModule } from "@scriptc/compiler";
+import { compileC, deserializeModule, emitLlvmModule, validateModule } from "@scriptc/compiler";
 import type { compile } from "@scriptc/compiler";
 import type { IrModule } from "../../packages/compiler/src/ir/ir.js";
 import { ts7Executable } from "../../packages/compiler/src/frontend/ts7/rpc-api.js";
@@ -38,7 +38,7 @@ const programs = [
   "contextual-array-union-write.ts",
 ];
 
-for (const backend of ["c", "llvm"] as const) {
+for (const backend of ["llvm"] as const) {
   test(`the complete frontend produces executable IR without Node (${backend})`, async () => {
     const directory = mkdtempSync(join(process.platform === "win32" ? tmpdir() : "/tmp", "scriptc-native-frontend-"));
     const executable = (name: string) => join(directory, name + (process.platform === "win32" ? ".exe" : ""));
@@ -55,7 +55,7 @@ for (const backend of ["c", "llvm"] as const) {
       // Build the actual entry in a child while keeping Vitest responsive.
       const api = pathToFileURL(join(root, "packages/compiler/src/index.ts")).href;
       const { stdout, stderr } = await execFileAsync(process.execPath, [
-        "--import", "tsx", "--input-type=module", "--eval",
+        "--max-old-space-size=8192", "--import", "tsx", "--input-type=module", "--eval",
         `import { compile } from ${JSON.stringify(api)};
          const result = await compile(process.argv[1], {
            outDir: process.argv[2], outPath: process.argv[3], backend: process.argv[4],
@@ -112,8 +112,8 @@ for (const backend of ["c", "llvm"] as const) {
           stats: { statementsFailed: 0, statementsIsland: 0, functionsSkipped: 0 }, diagnostics: [], validation: [],
         });
         if (!module) throw new Error(file + ": missing native IR");
-        const cPath = join(directory, "program.c");
-        writeFileSync(cPath, emitCModule(module));
+        const cPath = join(directory, "program.ll");
+        writeFileSync(cPath, emitLlvmModule(module));
         await compileC({
           cPath, outPath: executable("program"), sanitize,
           regex: moduleUsesRegex(module), copying: moduleUsesCopying(module),
@@ -209,8 +209,8 @@ for (const backend of ["c", "llvm"] as const) {
       const helperObject = join(directory, "add.o");
       writeFileSync(helper, "double native_add(double a, double b) { return a + b; }\n");
       execFileSync("clang", ["-c", helper, "-o", helperObject]);
-      const ffiC = join(directory, "ffi.c");
-      writeFileSync(ffiC, emitCModule(ffiResult.module));
+      const ffiC = join(directory, "ffi.ll");
+      writeFileSync(ffiC, emitLlvmModule(ffiResult.module));
       await compileC({ cPath: ffiC, outPath: executable("ffi"), sanitize, inspect: true, linkInputs: [helperObject] });
       const ffiRun = spawnSync(executable("ffi"), [], runOptions);
       expect(ffiRun.error).toBeUndefined();

@@ -5,9 +5,17 @@ import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 import type { NativeToolchainManifest } from "../../packages/compiler/src/native/toolchain.js";
+import { bootstrapStep } from "./self-hosting-timing.js";
 
 const root = join(import.meta.dirname, "../..");
 const exec = promisify(execFile);
+const sanitize = process.env["SCRIPTC_SAN"] === "1";
+
+function comparableStderr(text: string): string {
+  return sanitize
+    ? text.replace(/^==\d+==WARNING: ASan doesn't fully support makecontext\/swapcontext functions and may produce false positives in some cases!\n/gm, "")
+    : text;
+}
 
 function absoluteCommand(command: string): string {
   if (command.includes("/") || command.includes("\\")) return resolve(command);
@@ -26,12 +34,18 @@ test("the standalone compiler builds programs and rebuilds itself with Node unav
   const executable = (name: string) => join(directory, name + (process.platform === "win32" ? ".exe" : ""));
   const options = { cwd: root, timeout: 1_800_000, maxBuffer: 16 * 1024 * 1024 };
   try {
-    await exec(process.execPath, ["--max-old-space-size=8192", "--import", "tsx", join(root, "scripts/build-native-compiler.mts"), directory], options);
+    await bootstrapStep("build native compiler seed", () =>
+      exec(process.execPath, ["--max-old-space-size=8192", "--import", "tsx", join(root, "scripts/build-native-compiler.mts"), directory], options));
     const seed = executable("scriptc-native");
     const manifestPath = seed + ".json";
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as NativeToolchainManifest;
-    manifest.c_compiler = absoluteCommand(manifest.c_compiler);
     manifest.linker = absoluteCommand(manifest.linker);
+    if (process.platform === "linux") {
+      // Clang delegates linking to a separate executable. Resolve it before
+      // removing PATH so the complete native toolchain remains available.
+      const linker = await exec(manifest.linker, [...manifest.linker_args, "--print-prog-name=ld"], options);
+      manifest.linker_args.push("--ld-path=" + absoluteCommand(linker.stdout.trim()));
+    }
     if (process.platform === "darwin") manifest.dsymutil = absoluteCommand(manifest.dsymutil);
     writeFileSync(manifestPath, JSON.stringify(manifest));
     const nativeOptions = { ...options, env: { ...process.env, PATH: "" } };
@@ -40,8 +54,8 @@ test("the standalone compiler builds programs and rebuilds itself with Node unav
         const failure = error as Error & { code?: string | number; signal?: string; stdout?: string; stderr?: string };
         throw new Error(`${failure.message}\ncode=${failure.code} signal=${failure.signal}\n${failure.stderr ?? ""}\n${failure.stdout ?? ""}`, { cause: error });
       });
-      expect(result.stderr).toBe("");
-      const built = JSON.parse(result.stdout) as { outputPath: string; stats: {
+      expect(comparableStderr(result.stderr)).toBe("");
+      const built = JSON.parse(result.stdout) as { outputPath: string; llvmPath?: string; stats: {
         statementsTotal: number; statementsFailed: number; statementsIsland: number; functionsSkipped: number;
       } };
       expect(built.stats.statementsFailed).toBe(0);
@@ -66,8 +80,11 @@ test("the standalone compiler builds programs and rebuilds itself with Node unav
       expect(actual.stderr).toEqual(oracle.stderr);
     };
     const sample = join(root, "tests/corpus/class-array-optional-return.ts");
-    await checkProgram(seed, sample, "c");
+    const unionSample = join(root, "tests/corpus/union-nested-layout-discriminant.ts");
+    const receiverSample = join(root, "tests/corpus/llvm-read-receiver-lifetime.ts");
     await checkProgram(seed, sample, "llvm");
+    await checkProgram(seed, unionSample, "llvm");
+    await checkProgram(seed, receiverSample, "llvm");
 
     const badSource = join(directory, "bad.ts");
     writeFileSync(badSource, 'const value: number = "wrong"; console.log(value);\n');
@@ -81,18 +98,25 @@ test("the standalone compiler builds programs and rebuilds itself with Node unav
     const entry = join(root, "packages/compiler/src/native/main.ts");
     const profile = join(directory, "ts7-process.ffi.json");
     const rebuilt = executable("scriptc-rebuilt");
-    const self = await invoke(seed, [entry, "-o", rebuilt, "--backend=c", "--dev", "--strip", "--ffi", profile]);
+    // Optimize the compiler that will process the full graph again. Small
+    // programs above and below still exercise development output.
+    const self = await bootstrapStep("native compiler rebuilds itself", () =>
+      invoke(seed, [entry, "-o", rebuilt, "--backend=llvm", "--strip", "--keep-llvm", "--ffi", profile]));
     expect(self.stats.statementsTotal).toBeGreaterThan(10_000);
+    expect(self.llvmPath).toBe(rebuilt + ".ll");
     console.log("native self-build", self.stats);
-    await checkProgram(rebuilt, join(root, "tests/corpus/nullish-long-chain.ts"), "c");
+    await checkProgram(rebuilt, join(root, "tests/corpus/nullish-long-chain.ts"), "llvm");
     await checkProgram(rebuilt, sample, "llvm");
+    await checkProgram(rebuilt, unionSample, "llvm");
+    await checkProgram(rebuilt, receiverSample, "llvm");
 
-    // Both generations lower and emit the complete driver. Comparing C
-    // avoids the >512MB JSON string required by its expanded IR graph.
-    const seedC = join(directory, "seed.c");
-    const rebuiltC = join(directory, "rebuilt.c");
-    await invoke(seed, [entry, "--emit=c", "-o", seedC, "--ffi", profile]);
-    await invoke(rebuilt, [entry, "--emit=c", "-o", rebuiltC, "--ffi", profile]);
-    expect(readFileSync(seedC).equals(readFileSync(rebuiltC)), "native compiler generations must emit identical C").toBe(true);
+    // Compare the LLVM used to build the second generation with its own
+    // output. Retaining the build input avoids repeating the seed's work.
+    if (!self.llvmPath) throw new Error("native self-build did not retain its LLVM");
+    const seedLlvm = self.llvmPath;
+    const rebuiltLlvm = join(directory, "rebuilt.ll");
+    await bootstrapStep("rebuilt compiler emits itself", () =>
+      invoke(rebuilt, [entry, "--emit=llvm", "-o", rebuiltLlvm, "--ffi", profile]));
+    expect(readFileSync(seedLlvm).equals(readFileSync(rebuiltLlvm)), "native compiler generations must emit identical LLVM").toBe(true);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }, 5_400_000);

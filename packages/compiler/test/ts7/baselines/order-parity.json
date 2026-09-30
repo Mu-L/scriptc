@@ -11673,6 +11673,36 @@
     "<repo>/tests/corpus/process-uncaught-sync.cjs"
    ],
    "diags": []
+  },
+  "<repo>/tests/corpus/4030-runtime-object-truthiness.ts": {
+   "order": [
+    "<repo>/tests/corpus/4030-runtime-object-truthiness.ts"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/4031-event-emitter-long-tuples.ts": {
+   "order": [
+    "<repo>/tests/corpus/4031-event-emitter-long-tuples.ts"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/logical-runtime-optional-record.ts": {
+   "order": [
+    "<repo>/tests/corpus/logical-runtime-optional-record.ts"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/union-nested-layout-discriminant.ts": {
+   "order": [
+    "<repo>/tests/corpus/union-nested-layout-discriminant.ts"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/llvm-read-receiver-lifetime.ts": {
+   "order": [
+    "<repo>/tests/corpus/llvm-read-receiver-lifetime.ts"
+   ],
+   "diags": []
   }
  }
 }
